@@ -32,8 +32,8 @@ pub fn default_bindings() -> Vec<KeyBinding> {
         KeyBinding { hotkey: Hotkey::new(AwaseMods::NONE, AwaseKey::P), action: "copy_password".into() },
         KeyBinding { hotkey: Hotkey::new(AwaseMods::NONE, AwaseKey::U), action: "copy_username".into() },
         KeyBinding { hotkey: Hotkey::new(AwaseMods::NONE, AwaseKey::T), action: "copy_totp".into() },
-        // Note: '/' key — awase Key enum doesn't have Slash yet,
-        // so search is bound at the runtime dispatch layer only.
+        // Search
+        KeyBinding { hotkey: Hotkey::new(AwaseMods::NONE, AwaseKey::Slash), action: "search".into() },
         // Filter
         KeyBinding { hotkey: Hotkey::new(AwaseMods::NONE, AwaseKey::F), action: "toggle_favorites".into() },
         // Vault
