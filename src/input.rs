@@ -2,9 +2,50 @@
 //!
 //! Dispatches madori `AppEvent::Key` events to the appropriate action
 //! based on the current mode (Normal, Detail, Search, Command).
+//!
+//! Key binding definitions use awase types for platform-agnostic hotkey
+//! representation and serializable binding configuration.
+
+use awase::{Hotkey, Key as AwaseKey, Modifiers as AwaseMods};
 
 use crate::render::ViewMode;
 use madori::event::KeyCode;
+
+/// A keybinding definition: an awase `Hotkey` paired with an action name.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct KeyBinding {
+    /// The hotkey that triggers this binding (awase type).
+    pub hotkey: Hotkey,
+    /// The action name to perform.
+    pub action: String,
+}
+
+/// Default keybindings using awase `Hotkey` types.
+#[must_use]
+pub fn default_bindings() -> Vec<KeyBinding> {
+    vec![
+        // Normal mode navigation
+        KeyBinding { hotkey: Hotkey::new(AwaseMods::NONE, AwaseKey::J), action: "down".into() },
+        KeyBinding { hotkey: Hotkey::new(AwaseMods::NONE, AwaseKey::K), action: "up".into() },
+        KeyBinding { hotkey: Hotkey::new(AwaseMods::NONE, AwaseKey::Return), action: "select".into() },
+        // Clipboard
+        KeyBinding { hotkey: Hotkey::new(AwaseMods::NONE, AwaseKey::P), action: "copy_password".into() },
+        KeyBinding { hotkey: Hotkey::new(AwaseMods::NONE, AwaseKey::U), action: "copy_username".into() },
+        KeyBinding { hotkey: Hotkey::new(AwaseMods::NONE, AwaseKey::T), action: "copy_totp".into() },
+        // Note: '/' key — awase Key enum doesn't have Slash yet,
+        // so search is bound at the runtime dispatch layer only.
+        // Filter
+        KeyBinding { hotkey: Hotkey::new(AwaseMods::NONE, AwaseKey::F), action: "toggle_favorites".into() },
+        // Vault
+        KeyBinding { hotkey: Hotkey::new(AwaseMods::NONE, AwaseKey::Tab), action: "next_vault".into() },
+        // Quit
+        KeyBinding { hotkey: Hotkey::new(AwaseMods::NONE, AwaseKey::Q), action: "quit".into() },
+        // Back
+        KeyBinding { hotkey: Hotkey::new(AwaseMods::NONE, AwaseKey::Escape), action: "back".into() },
+        // Detail mode
+        KeyBinding { hotkey: Hotkey::new(AwaseMods::SHIFT, AwaseKey::H), action: "toggle_hidden".into() },
+    ]
+}
 
 /// Actions that can be triggered by keyboard input.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,6 +165,22 @@ fn map_search(key: &KeyCode, text: &Option<String>) -> Action {
 mod tests {
     use super::*;
     use madori::event::KeyCode;
+
+    #[test]
+    fn default_bindings_are_valid() {
+        let bindings = default_bindings();
+        assert!(!bindings.is_empty());
+        let has_quit = bindings.iter().any(|b| b.action == "quit");
+        assert!(has_quit, "should have a quit binding");
+    }
+
+    #[test]
+    fn bindings_are_serializable() {
+        let bindings = default_bindings();
+        let json = serde_json::to_string(&bindings).unwrap();
+        let deserialized: Vec<KeyBinding> = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.len(), bindings.len());
+    }
 
     fn no_mods() -> madori::event::Modifiers {
         madori::event::Modifiers::default()

@@ -13,6 +13,7 @@ mod config;
 mod input;
 mod mcp;
 mod render;
+mod scripting;
 mod vault;
 
 use api::VaultBackend;
