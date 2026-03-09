@@ -43,14 +43,43 @@ pub trait VaultBackend: Send + Sync {
     fn get_item(&self, vault_id: &str, item_id: &str) -> impl std::future::Future<Output = Result<Item>> + Send;
 }
 
+/// Backend enum that dispatches to either Connect API or `op` CLI.
+pub enum Backend {
+    Connect(ConnectBackend),
+    Cli(OpCliBackend),
+}
+
+impl VaultBackend for Backend {
+    async fn list_vaults(&self) -> Result<Vec<Vault>> {
+        match self {
+            Self::Connect(b) => b.list_vaults().await,
+            Self::Cli(b) => b.list_vaults().await,
+        }
+    }
+
+    async fn list_items(&self, vault_id: &str) -> Result<Vec<Item>> {
+        match self {
+            Self::Connect(b) => b.list_items(vault_id).await,
+            Self::Cli(b) => b.list_items(vault_id).await,
+        }
+    }
+
+    async fn get_item(&self, vault_id: &str, item_id: &str) -> Result<Item> {
+        match self {
+            Self::Connect(b) => b.get_item(vault_id, item_id).await,
+            Self::Cli(b) => b.get_item(vault_id, item_id).await,
+        }
+    }
+}
+
 /// Create the appropriate backend from config.
-pub fn create_backend(config: &ApiConfig) -> Result<Box<dyn VaultBackend>> {
+pub fn create_backend(config: &ApiConfig) -> Result<Backend> {
     if let (Some(url), Some(token)) = (&config.connect_url, &config.connect_token) {
         tracing::info!("using 1Password Connect API at {url}");
-        Ok(Box::new(ConnectBackend::new(url, token)?))
+        Ok(Backend::Connect(ConnectBackend::new(url, token)?))
     } else {
         tracing::info!("using `op` CLI at {}", config.op_path);
-        Ok(Box::new(OpCliBackend::new(&config.op_path, config.service_account_token.as_deref())))
+        Ok(Backend::Cli(OpCliBackend::new(&config.op_path, config.service_account_token.as_deref())))
     }
 }
 

@@ -32,10 +32,10 @@ garasu = { git = "https://github.com/pleme-io/garasu" }
 madori = { git = "https://github.com/pleme-io/madori" }
 egaku = { git = "https://github.com/pleme-io/egaku" }
 irodzuki = { git = "https://github.com/pleme-io/irodzuki" }
-hikidashi = { git = "https://github.com/pleme-io/hikidashi" }
+hasami = { git = "https://github.com/pleme-io/hasami" }
 todoku = { git = "https://github.com/pleme-io/todoku" }
 tsunagu = { git = "https://github.com/pleme-io/tsunagu" }
-kotoba = { git = "https://github.com/pleme-io/kotoba" }
+kaname = { git = "https://github.com/pleme-io/kaname" }
 shikumi = { git = "https://github.com/pleme-io/shikumi" }
 
 # GPU rendering (via madori/garasu, but needed for wgpu types in render code)
@@ -51,7 +51,7 @@ serde_json = "1"
 arboard = "3"
 
 # CLI and config
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1.0", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
