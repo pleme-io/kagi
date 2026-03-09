@@ -1,112 +1,88 @@
-//! Secure clipboard management.
+//! Secure clipboard management via hasami.
 //!
-//! Copies secrets to system clipboard via arboard, then schedules
-//! auto-clear after a configurable timeout. Uses zeroize for secure
-//! memory handling.
+//! Wraps hasami's `TimedClipboard` for password auto-clear, plus
+//! a `ClipboardHistory` for recent copies. Uses zeroize for secure
+//! memory handling of secrets before they're sent to the clipboard.
 
 use crate::config::ClipboardConfig;
-use arboard::Clipboard as ArboardClipboard;
-use std::sync::{Arc, Mutex};
+use hasami::{Clipboard, ClipboardProvider, TimedClipboard};
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Notify;
 
 #[derive(thiserror::Error, Debug)]
 pub enum ClipboardError {
     #[error("clipboard access failed: {0}")]
-    Access(String),
+    Access(#[from] hasami::HasamiError),
 }
 
 pub type Result<T> = std::result::Result<T, ClipboardError>;
 
-/// Secure clipboard with auto-clear support.
+/// Secure clipboard with auto-clear support via hasami.
 pub struct SecureClip {
-    inner: Mutex<Option<ArboardClipboard>>,
-    auto_clear: bool,
+    timed: TimedClipboard<Clipboard>,
     clear_timeout: Duration,
-    cancel: Arc<Notify>,
+    auto_clear: bool,
 }
 
 impl SecureClip {
-    /// Create from config.
-    #[must_use]
-    pub fn from_config(config: &ClipboardConfig) -> Self {
-        Self {
-            inner: Mutex::new(None),
-            auto_clear: config.auto_clear,
+    /// Create from config using a real system clipboard.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ClipboardError` if the system clipboard cannot be accessed.
+    pub fn from_config(config: &ClipboardConfig) -> Result<Self> {
+        let clipboard = Arc::new(Clipboard::new()?);
+        Ok(Self {
+            timed: TimedClipboard::new(clipboard),
             clear_timeout: Duration::from_secs(u64::from(config.clear_timeout_secs)),
-            cancel: Arc::new(Notify::new()),
-        }
+            auto_clear: config.auto_clear,
+        })
     }
 
-    fn with_board<F, T>(&self, f: F) -> Result<T>
-    where
-        F: FnOnce(&mut ArboardClipboard) -> std::result::Result<T, arboard::Error>,
-    {
-        let mut guard = self
-            .inner
-            .lock()
-            .map_err(|e| ClipboardError::Access(format!("mutex poisoned: {e}")))?;
-
-        let board = match guard.as_mut() {
-            Some(b) => b,
-            None => {
-                let b = ArboardClipboard::new()
-                    .map_err(|e| ClipboardError::Access(e.to_string()))?;
-                guard.insert(b)
-            }
-        };
-
-        f(board).map_err(|e| ClipboardError::Access(e.to_string()))
+    /// Create from a pre-built clipboard provider (for testing or custom backends).
+    #[allow(dead_code)]
+    pub fn with_provider(provider: Arc<Clipboard>, config: &ClipboardConfig) -> Self {
+        Self {
+            timed: TimedClipboard::new(provider),
+            clear_timeout: Duration::from_secs(u64::from(config.clear_timeout_secs)),
+            auto_clear: config.auto_clear,
+        }
     }
 
     /// Copy a secret to the clipboard. If auto-clear is enabled,
-    /// spawns a background task to clear after timeout.
+    /// schedules clearing after the configured timeout.
     pub fn copy_secret(&self, value: &str) -> Result<()> {
-        // Cancel any previous auto-clear timer
-        self.cancel.notify_waiters();
-
-        self.with_board(|b| b.set_text(value))?;
-        tracing::info!("copied secret to clipboard");
-
         if self.auto_clear {
-            let cancel = Arc::clone(&self.cancel);
-            let timeout = self.clear_timeout;
-
-            // We can't hold the Mutex across an async boundary, so we
-            // create a new clipboard handle in the clear task.
-            tokio::spawn(async move {
-                tokio::select! {
-                    () = tokio::time::sleep(timeout) => {
-                        tracing::info!("auto-clearing clipboard after {timeout:?}");
-                        match ArboardClipboard::new() {
-                            Ok(mut b) => { let _ = b.clear(); }
-                            Err(e) => tracing::warn!("failed to clear clipboard: {e}"),
-                        }
-                    }
-                    () = cancel.notified() => {
-                        tracing::debug!("auto-clear cancelled (new copy)");
-                    }
-                }
-            });
+            self.timed.copy_sensitive(value, self.clear_timeout)?;
+            tracing::info!(
+                timeout_secs = self.clear_timeout.as_secs(),
+                "copied secret to clipboard (auto-clear scheduled)"
+            );
+        } else {
+            self.timed.copy_text(value)?;
+            tracing::info!("copied secret to clipboard (no auto-clear)");
         }
-
         Ok(())
     }
 
     /// Copy non-secret text (no auto-clear).
+    #[allow(dead_code)]
     pub fn copy_text(&self, text: &str) -> Result<()> {
-        self.with_board(|b| b.set_text(text))
+        self.timed.copy_text(text)?;
+        Ok(())
     }
 
     /// Read text from clipboard.
+    #[allow(dead_code)]
     pub fn paste(&self) -> Result<String> {
-        self.with_board(|b| b.get_text())
+        Ok(self.timed.provider().paste_text()?)
     }
 
     /// Immediately clear the clipboard.
+    #[allow(dead_code)]
     pub fn clear(&self) -> Result<()> {
-        self.cancel.notify_waiters();
-        self.with_board(|b| b.clear())
+        self.timed.provider().clear()?;
+        Ok(())
     }
 }
 
@@ -116,8 +92,18 @@ mod tests {
     use crate::config::ClipboardConfig;
 
     #[test]
-    fn secure_clip_creates() {
-        let config = ClipboardConfig::default();
-        let _clip = SecureClip::from_config(&config);
+    fn clipboard_error_display() {
+        let err = ClipboardError::Access(hasami::HasamiError::Empty);
+        assert!(err.to_string().contains("clipboard"));
+    }
+
+    #[test]
+    fn config_creates_timeout() {
+        let config = ClipboardConfig {
+            clear_timeout_secs: 60,
+            auto_clear: true,
+        };
+        assert_eq!(config.clear_timeout_secs, 60);
+        assert!(config.auto_clear);
     }
 }

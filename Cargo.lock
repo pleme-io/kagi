@@ -1746,11 +1746,11 @@ name = "kagibako"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "arboard",
  "clap",
  "dirs",
  "egaku",
  "garasu",
+ "glyphon",
  "hasami",
  "irodzuki",
  "kaname",

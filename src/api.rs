@@ -41,6 +41,9 @@ pub trait VaultBackend: Send + Sync {
 
     /// Get a full item with all fields (including secrets).
     fn get_item(&self, vault_id: &str, item_id: &str) -> impl std::future::Future<Output = Result<Item>> + Send;
+
+    /// Get the current TOTP code for an item.
+    fn get_totp(&self, vault_id: &str, item_id: &str) -> impl std::future::Future<Output = Result<String>> + Send;
 }
 
 /// Backend enum that dispatches to either Connect API or `op` CLI.
@@ -68,6 +71,13 @@ impl VaultBackend for Backend {
         match self {
             Self::Connect(b) => b.get_item(vault_id, item_id).await,
             Self::Cli(b) => b.get_item(vault_id, item_id).await,
+        }
+    }
+
+    async fn get_totp(&self, vault_id: &str, item_id: &str) -> Result<String> {
+        match self {
+            Self::Connect(b) => b.get_totp(vault_id, item_id).await,
+            Self::Cli(b) => b.get_totp(vault_id, item_id).await,
         }
     }
 }
@@ -163,6 +173,16 @@ impl VaultBackend for ConnectBackend {
         self.get_json(&format!("/v1/vaults/{vault_id}/items/{item_id}"))
             .await
     }
+
+    async fn get_totp(&self, vault_id: &str, item_id: &str) -> Result<String> {
+        // Connect API includes TOTP in the item fields as OTP type
+        let item: Item = self.get_item(vault_id, item_id).await?;
+        item.fields
+            .iter()
+            .find(|f| f.field_type == FieldType::Otp)
+            .map(|f| f.value.as_str().to_string())
+            .ok_or_else(|| ApiError::Cli("no TOTP field found on this item".into()))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -201,6 +221,29 @@ impl OpCliBackend {
         }
 
         String::from_utf8(output.stdout)
+            .map_err(|e| ApiError::Cli(format!("invalid UTF-8 output: {e}")))
+    }
+
+    /// Run `op` CLI without --format=json (for commands that return plain text).
+    fn run_plain(&self, args: &[&str]) -> Result<String> {
+        let mut cmd = Command::new(&self.op_path);
+        cmd.args(args);
+
+        if let Some(token) = &self.service_account_token {
+            cmd.env("OP_SERVICE_ACCOUNT_TOKEN", token);
+        }
+
+        let output = cmd
+            .output()
+            .map_err(|e| ApiError::Cli(format!("failed to run `op`: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(ApiError::Cli(stderr.into_owned()));
+        }
+
+        String::from_utf8(output.stdout)
+            .map(|s| s.trim().to_string())
             .map_err(|e| ApiError::Cli(format!("invalid UTF-8 output: {e}")))
     }
 }
@@ -351,5 +394,10 @@ impl VaultBackend for OpCliBackend {
         let output = self.run(&["item", "get", item_id, "--vault", vault_id])?;
         let item: OpItem = serde_json::from_str(&output)?;
         Ok(Item::from(item))
+    }
+
+    async fn get_totp(&self, vault_id: &str, item_id: &str) -> Result<String> {
+        // `op item get --otp` returns the TOTP code as plain text
+        self.run_plain(&["item", "get", item_id, "--vault", vault_id, "--otp"])
     }
 }

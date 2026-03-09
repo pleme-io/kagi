@@ -42,13 +42,11 @@ shikumi = { git = "https://github.com/pleme-io/shikumi" }
 wgpu = "25"
 winit = "0.30"
 pollster = "0.4"
+glyphon = "0.9"
 
 # 1Password Connect / CLI integration
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 serde_json = "1"
-
-# Clipboard
-arboard = "3"
 
 # CLI and config
 clap = { version = "4", features = ["derive", "env"] }

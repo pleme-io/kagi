@@ -1,4 +1,4 @@
-//! Vault and item models — serde types matching 1Password's data model.
+//! Vault and item models -- serde types matching 1Password's data model.
 //!
 //! Vaults contain items. Items have fields (username, password, notes, etc.)
 //! All secret fields use zeroize for secure memory clearing.
@@ -137,11 +137,11 @@ pub enum FieldType {
 /// A secret value that is zeroized on drop.
 #[derive(Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 #[serde(transparent)]
-pub struct SecretValue(String);
+pub struct SecretValue(std::string::String);
 
 impl SecretValue {
     #[must_use]
-    pub fn new(value: impl Into<String>) -> Self {
+    pub fn new(value: impl Into<std::string::String>) -> Self {
         Self(value.into())
     }
 
@@ -158,7 +158,7 @@ impl SecretValue {
 
 impl Default for SecretValue {
     fn default() -> Self {
-        Self(String::new())
+        Self(std::string::String::new())
     }
 }
 
@@ -202,6 +202,12 @@ impl Item {
             .map(|f| f.value.as_str())
     }
 
+    /// Check if this item has an OTP/TOTP field.
+    #[must_use]
+    pub fn has_totp(&self) -> bool {
+        self.fields.iter().any(|f| f.field_type == FieldType::Otp)
+    }
+
     /// Get the primary URL.
     #[must_use]
     pub fn primary_url(&self) -> Option<&str> {
@@ -212,8 +218,9 @@ impl Item {
             .map(|u| u.href.as_str())
     }
 
-    /// Simple fuzzy match against title, URLs, and username.
+    /// Simple substring match against title, URLs, username, and tags.
     #[must_use]
+    #[allow(dead_code)]
     pub fn matches(&self, query: &str) -> bool {
         let q = query.to_lowercase();
         self.title.to_lowercase().contains(&q)
@@ -221,6 +228,76 @@ impl Item {
             || self.username().is_some_and(|u| u.to_lowercase().contains(&q))
             || self.tags.iter().any(|t| t.to_lowercase().contains(&q))
     }
+
+    /// Compute a fuzzy match score (0 = no match, higher = better match).
+    /// Scores title matches highest, then username, then URL, then tags.
+    #[must_use]
+    pub fn fuzzy_score(&self, query: &str) -> u32 {
+        if query.is_empty() {
+            return 1; // everything matches empty query
+        }
+        let q = query.to_lowercase();
+        let mut score = 0u32;
+
+        // Title scoring: exact > starts-with > contains > subsequence
+        let title_lower = self.title.to_lowercase();
+        if title_lower == q {
+            score += 1000;
+        } else if title_lower.starts_with(&q) {
+            score += 500;
+        } else if title_lower.contains(&q) {
+            score += 200;
+        } else if is_subsequence(&q, &title_lower) {
+            score += 100;
+        }
+
+        // Username scoring
+        if let Some(user) = self.username() {
+            let user_lower = user.to_lowercase();
+            if user_lower.contains(&q) {
+                score += 150;
+            } else if is_subsequence(&q, &user_lower) {
+                score += 50;
+            }
+        }
+
+        // URL scoring
+        for url in &self.urls {
+            let url_lower = url.href.to_lowercase();
+            if url_lower.contains(&q) {
+                score += 100;
+            }
+        }
+
+        // Tag scoring
+        for tag in &self.tags {
+            if tag.to_lowercase().contains(&q) {
+                score += 80;
+            }
+        }
+
+        // Favorites get a small boost
+        if self.favorite && score > 0 {
+            score += 10;
+        }
+
+        score
+    }
+}
+
+/// Check if `needle` is a subsequence of `haystack`.
+fn is_subsequence(needle: &str, haystack: &str) -> bool {
+    let mut haystack_chars = haystack.chars();
+    for nc in needle.chars() {
+        loop {
+            match haystack_chars.next() {
+                Some(hc) if hc == nc => break,
+                Some(_) => continue,
+                None => return false,
+            }
+        }
+    }
+    true
 }
 
 /// Summary view of an item (no secret fields).
@@ -230,9 +307,29 @@ pub struct ItemSummary {
     pub title: String,
     pub category: ItemCategory,
     pub vault_id: String,
+    pub vault_name: String,
     pub url: Option<String>,
     pub username: Option<String>,
     pub favorite: bool,
+    pub has_totp: bool,
+}
+
+impl ItemSummary {
+    /// Create from an item with a vault name for display.
+    #[must_use]
+    pub fn from_item_with_vault(item: &Item, vault_name: &str) -> Self {
+        Self {
+            id: item.id.clone(),
+            title: item.title.clone(),
+            category: item.category,
+            vault_id: item.vault_id.clone(),
+            vault_name: vault_name.to_string(),
+            url: item.primary_url().map(std::string::String::from),
+            username: item.username().map(std::string::String::from),
+            favorite: item.favorite,
+            has_totp: item.has_totp(),
+        }
+    }
 }
 
 impl From<&Item> for ItemSummary {
@@ -242,9 +339,11 @@ impl From<&Item> for ItemSummary {
             title: item.title.clone(),
             category: item.category,
             vault_id: item.vault_id.clone(),
-            url: item.primary_url().map(String::from),
-            username: item.username().map(String::from),
+            vault_name: String::new(),
+            url: item.primary_url().map(std::string::String::from),
+            username: item.username().map(std::string::String::from),
             favorite: item.favorite,
+            has_totp: item.has_totp(),
         }
     }
 }
@@ -278,6 +377,13 @@ mod tests {
                     purpose: Some(FieldPurpose::Password),
                     field_type: FieldType::Concealed,
                 },
+                Field {
+                    id: "f3".into(),
+                    label: "one-time password".into(),
+                    value: SecretValue::new("otpauth://totp/..."),
+                    purpose: None,
+                    field_type: FieldType::Otp,
+                },
             ],
             tags: vec!["dev".into()],
             favorite: true,
@@ -308,6 +414,12 @@ mod tests {
     }
 
     #[test]
+    fn has_totp_field() {
+        let item = test_item();
+        assert!(item.has_totp());
+    }
+
+    #[test]
     fn matches_title() {
         let item = test_item();
         assert!(item.matches("github"));
@@ -334,6 +446,56 @@ mod tests {
     }
 
     #[test]
+    fn fuzzy_score_exact_title() {
+        let item = test_item();
+        let score = item.fuzzy_score("GitHub");
+        assert!(score >= 1000, "exact title match should score >= 1000, got {score}");
+    }
+
+    #[test]
+    fn fuzzy_score_starts_with() {
+        let item = test_item();
+        let score = item.fuzzy_score("Git");
+        assert!(score >= 500, "starts-with match should score >= 500, got {score}");
+    }
+
+    #[test]
+    fn fuzzy_score_contains() {
+        let item = test_item();
+        let score = item.fuzzy_score("itHu");
+        assert!(score >= 200, "contains match should score >= 200, got {score}");
+    }
+
+    #[test]
+    fn fuzzy_score_subsequence() {
+        let item = test_item();
+        let score = item.fuzzy_score("ghb");
+        assert!(score >= 100, "subsequence match should score >= 100, got {score}");
+    }
+
+    #[test]
+    fn fuzzy_score_no_match() {
+        let item = test_item();
+        let score = item.fuzzy_score("zzzzz");
+        assert_eq!(score, 0, "no match should score 0");
+    }
+
+    #[test]
+    fn fuzzy_score_empty_query() {
+        let item = test_item();
+        let score = item.fuzzy_score("");
+        assert_eq!(score, 1, "empty query matches everything with score 1");
+    }
+
+    #[test]
+    fn is_subsequence_basic() {
+        assert!(is_subsequence("ghb", "github"));
+        assert!(is_subsequence("abc", "aXbXc"));
+        assert!(!is_subsequence("abc", "acb"));
+        assert!(is_subsequence("", "anything"));
+    }
+
+    #[test]
     fn secret_value_debug_redacted() {
         let sv = SecretValue::new("secret");
         assert_eq!(format!("{sv:?}"), "[REDACTED]");
@@ -348,5 +510,14 @@ mod tests {
         assert_eq!(summary.title, "GitHub");
         assert_eq!(summary.username.as_deref(), Some("user@example.com"));
         assert!(summary.favorite);
+        assert!(summary.has_totp);
+    }
+
+    #[test]
+    fn item_summary_with_vault_name() {
+        let item = test_item();
+        let summary = ItemSummary::from_item_with_vault(&item, "Personal");
+        assert_eq!(summary.vault_name, "Personal");
+        assert_eq!(summary.title, "GitHub");
     }
 }
