@@ -37,6 +37,7 @@ todoku = { git = "https://github.com/pleme-io/todoku" }
 tsunagu = { git = "https://github.com/pleme-io/tsunagu" }
 kaname = { git = "https://github.com/pleme-io/kaname" }
 shikumi = { git = "https://github.com/pleme-io/shikumi" }
+schemars = "1"
 
 # GPU rendering (via madori/garasu, but needed for wgpu types in render code)
 wgpu = "25"

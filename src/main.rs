@@ -11,6 +11,7 @@ mod api;
 mod clipboard;
 mod config;
 mod input;
+mod mcp;
 mod render;
 mod vault;
 
@@ -52,6 +53,8 @@ enum Commands {
         /// Search query
         query: String,
     },
+    /// Start the MCP server (stdio transport).
+    Mcp,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -189,6 +192,20 @@ fn main() -> anyhow::Result<()> {
                 eprintln!("Item \"{item}\" not found in any vault");
                 Ok::<(), anyhow::Error>(())
             })?;
+        }
+        Some(Commands::Mcp) => {
+            tracing_subscriber::fmt()
+                .with_env_filter(EnvFilter::from_default_env())
+                .with_writer(std::io::stderr)
+                .init();
+
+            let rt = tokio::runtime::Runtime::new()?;
+            rt.block_on(async {
+                if let Err(e) = mcp::run(config).await {
+                    eprintln!("MCP server error: {e}");
+                    std::process::exit(1);
+                }
+            });
         }
         Some(Commands::Search { query }) => {
             tracing_subscriber::fmt()
