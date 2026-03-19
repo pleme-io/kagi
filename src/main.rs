@@ -18,7 +18,6 @@ mod vault;
 
 use api::VaultBackend;
 use clap::{Parser, Subcommand};
-use tracing_subscriber::EnvFilter;
 use vault::ItemSummary;
 
 #[derive(Parser)]
@@ -59,25 +58,18 @@ enum Commands {
 }
 
 fn main() -> anyhow::Result<()> {
+    shidou::init_tracing();
+
     let cli = Cli::parse();
     let config = config::load(&cli.config)?;
 
     match cli.command {
         None | Some(Commands::Open) => {
-            tracing_subscriber::fmt()
-                .with_env_filter(EnvFilter::from_default_env())
-                .with_writer(std::io::stderr)
-                .init();
-
             tracing::info!("launching kagi GUI");
             run_gui(config)?;
         }
         Some(Commands::List { vault }) => {
-            tracing_subscriber::fmt()
-                .with_env_filter(EnvFilter::from_default_env())
-                .init();
-
-            let rt = tokio::runtime::Runtime::new()?;
+            let rt = shidou::create_runtime()?;
             rt.block_on(async {
                 let backend = api::create_backend(&config.api)?;
                 let vaults = backend.list_vaults().await?;
@@ -111,11 +103,7 @@ fn main() -> anyhow::Result<()> {
             })?;
         }
         Some(Commands::Get { item, field }) => {
-            tracing_subscriber::fmt()
-                .with_env_filter(EnvFilter::from_default_env())
-                .init();
-
-            let rt = tokio::runtime::Runtime::new()?;
+            let rt = shidou::create_runtime()?;
             rt.block_on(async {
                 let backend = api::create_backend(&config.api)?;
                 let clip = clipboard::SecureClip::from_config(&config.clipboard)
@@ -195,25 +183,16 @@ fn main() -> anyhow::Result<()> {
             })?;
         }
         Some(Commands::Mcp) => {
-            tracing_subscriber::fmt()
-                .with_env_filter(EnvFilter::from_default_env())
-                .with_writer(std::io::stderr)
-                .init();
-
-            let rt = tokio::runtime::Runtime::new()?;
-            rt.block_on(async {
+            shidou::block_on(async {
                 if let Err(e) = mcp::run(config).await {
                     eprintln!("MCP server error: {e}");
                     std::process::exit(1);
                 }
-            });
+            })
+            .expect("failed to create tokio runtime");
         }
         Some(Commands::Search { query }) => {
-            tracing_subscriber::fmt()
-                .with_env_filter(EnvFilter::from_default_env())
-                .init();
-
-            let rt = tokio::runtime::Runtime::new()?;
+            let rt = shidou::create_runtime()?;
             rt.block_on(async {
                 let backend = api::create_backend(&config.api)?;
                 let vaults = backend.list_vaults().await?;
