@@ -5566,6 +5566,10 @@ rec {
             packageId = "serde_json";
           }
           {
+            name = "shidou";
+            packageId = "shidou";
+          }
+          {
             name = "shikumi";
             packageId = "shikumi";
           }
@@ -5589,11 +5593,6 @@ rec {
           {
             name = "tracing";
             packageId = "tracing";
-          }
-          {
-            name = "tracing-subscriber";
-            packageId = "tracing-subscriber";
-            features = [ "env-filter" ];
           }
           {
             name = "tsunagu";
@@ -12638,6 +12637,52 @@ rec {
         features = {
           "loom" = [ "dep:loom" ];
         };
+      };
+      "shidou" = rec {
+        crateName = "shidou";
+        version = "0.1.0";
+        edition = "2024";
+        workspace_member = null;
+        src = pkgs.fetchgit {
+          url = "https://github.com/pleme-io/shidou";
+          rev = "63a37cc8b6ed9834b247ebd4f52ea535cce7c27c";
+          sha256 = "1lglz2yb7c635lrm0lybp14009dik9xmss2cc2h53imakxkcpz29";
+        };
+        dependencies = [
+          {
+            name = "anyhow";
+            packageId = "anyhow";
+          }
+          {
+            name = "clap";
+            packageId = "clap";
+            features = [ "derive" ];
+          }
+          {
+            name = "serde";
+            packageId = "serde";
+            features = [ "derive" ];
+          }
+          {
+            name = "shikumi";
+            packageId = "shikumi";
+          }
+          {
+            name = "tokio";
+            packageId = "tokio";
+            features = [ "rt-multi-thread" ];
+          }
+          {
+            name = "tracing";
+            packageId = "tracing";
+          }
+          {
+            name = "tracing-subscriber";
+            packageId = "tracing-subscriber";
+            features = [ "env-filter" ];
+          }
+        ];
+
       };
       "shikumi" = rec {
         crateName = "shikumi";
