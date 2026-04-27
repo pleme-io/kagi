@@ -1,5 +1,15 @@
 # Kagibako (鍵箱) — GPU 1Password Client
 
+> **★★★ CSE / Knowable Construction.** This repo operates under
+> **Constructive Substrate Engineering** — canonical specification at
+> [`pleme-io/theory/CONSTRUCTIVE-SUBSTRATE-ENGINEERING.md`](https://github.com/pleme-io/theory/blob/main/CONSTRUCTIVE-SUBSTRATE-ENGINEERING.md).
+> The Compounding Directive (operational rules: solve once, load-bearing
+> fixes only, idiom-first, models stay current, direction beats velocity)
+> is in the org-level pleme-io/CLAUDE.md ★★★ section. Read both before
+> non-trivial changes. GPU 1Password client; the secure clipboard, vault,
+> and item types are typed primitives shared with the broader secrets
+> surface (akeyless-nix, blackmatter-secrets) — never store local vault state.
+
 Crate: `kagibako` | Binary: `kagi` | Config app name: `kagi`
 
 GPU-rendered 1Password client. Uses 1Password's service (Connect API + `op` CLI) for
