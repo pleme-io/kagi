@@ -483,17 +483,22 @@ pub struct KagiRenderer {
 
 impl KagiRenderer {
     /// Create a new renderer with the given appearance config.
+    ///
+    /// sRGB → linear via ishou-tokens. egaku::theme::hex_to_rgba
+    /// returns sRGB unit-floats; writing those straight into a
+    /// `Bgra8UnormSrgb` surface gamma-corrects twice. See
+    /// pleme-io/theory/THEME-ARCHITECTURE.md.
     #[must_use]
     pub fn new(appearance: &AppearanceConfig) -> Self {
+        use ishou_tokens::space::srgb_channel_to_linear;
         let bg = egaku::theme::hex_to_rgba(&appearance.background)
             .unwrap_or([0.180, 0.204, 0.251, 1.0]);
-
         Self {
             state: KagiState::new(),
             bg_color: wgpu::Color {
-                r: f64::from(bg[0]),
-                g: f64::from(bg[1]),
-                b: f64::from(bg[2]),
+                r: f64::from(srgb_channel_to_linear(bg[0])),
+                g: f64::from(srgb_channel_to_linear(bg[1])),
+                b: f64::from(srgb_channel_to_linear(bg[2])),
                 a: f64::from(bg[3]),
             },
             font_size: 16.0,
